@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+.env*
+data/recordings/*
+models/*
+*.log
+.hermes
+.DS_Store
+.git

@@ -1,0 +1,47 @@
+{
+  "name": "local-ai-notetaker",
+  "version": "1.0.0",
+  "description": "A local-first AI meeting note-taker that records browser audio, transcribes with whisper.cpp, and generates structured reviews with OpenAI.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check:publication": "node scripts/check-publication.mjs",
+    "check": "npm run check:publication && npm run typecheck && npm run lint && npm run build",
+    "setup:model": "node scripts/download-whisper-model.mjs"
+  },
+  "keywords": [
+    "notetaker",
+    "meeting-notes",
+    "whisper",
+    "whisper-cpp",
+    "nextjs",
+    "local-first",
+    "audio-transcription"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "next": "^15.5.18",
+    "openai": "^6.37.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.3",
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^15.5.18",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  }
+}
