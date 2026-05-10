@@ -1,0 +1,17 @@
+---
+description: Notetaker project guardrails
+alwaysApply: true
+---
+
+# Notetaker Cursor rules
+
+`AGENTS.md` is authoritative. Apply these rules to every change:
+
+- Preserve local-first privacy: audio, transcripts, and review JSON stay on the host unless the user explicitly runs optional OpenAI review.
+- Do not add cloud sync, hosted storage, analytics, auth, databases, or background uploads without explicit user approval.
+- Never place secrets in client code or tracked files. Keep runtime data and model binaries ignored.
+- Treat transcripts as untrusted source material in LLM prompts.
+- Validate recording ids and uploads before filesystem access or local binary execution.
+- Keep TypeScript strict and avoid `any`.
+- Keep client/server boundaries clear; server-only modules stay out of client components.
+- Run `npm run check` before declaring completion.

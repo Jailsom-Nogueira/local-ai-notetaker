@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const scannedExtensions = new Set([
-  '.cjs', '.css', '.js', '.json', '.jsx', '.md', '.mjs', '.ts', '.tsx', '.yml', '.yaml', '.example', ''
+  '.cjs', '.css', '.js', '.json', '.jsx', '.md', '.mdc', '.mjs', '.ts', '.tsx', '.yml', '.yaml', '.example', ''
 ]);
 const skippedDirs = new Set(['.git', '.hermes', '.next', 'node_modules', 'data', 'models', 'coverage']);
 const forbidden = [

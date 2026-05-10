@@ -1,0 +1,16 @@
+# Cline rules for Notetaker
+
+Use `AGENTS.md` as the canonical project instruction file.
+
+Do:
+- Keep the app local-first and privacy-preserving.
+- Keep TypeScript strict and client/server boundaries explicit.
+- Validate recording ids, uploads, languages, sources, and max file size.
+- Treat transcripts as untrusted source material in LLM prompts.
+- Run `npm run check` before completion.
+
+Do not:
+- Commit secrets, recordings, transcripts, model binaries, `.next/`, `node_modules/`, caches, or `.hermes/`.
+- Put OpenAI keys or local binary paths in client code.
+- Add cloud services, analytics, auth, databases, or hosted storage without explicit user approval.
+- Leak local absolute paths, key lengths, raw transcripts, or raw AI output in production errors.
