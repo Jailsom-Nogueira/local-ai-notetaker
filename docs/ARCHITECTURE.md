@@ -16,6 +16,10 @@ capture, local transcription, and an optional server-side AI review.
 
 The client never receives or stores API keys.
 
+Transcript and review sharing is also client-side. The browser formats the
+selected local text and opens an email or WhatsApp composer link only after the
+user clicks a share destination; there is no Notetaker backend delivery service.
+
 ### Route handlers
 
 Route handlers run in the Node.js runtime.
@@ -58,6 +62,8 @@ Browser audio Blob
 - Recording ids must match `rec-YYYYMMDD-HHMMSS-xxxxx` before filesystem access.
 - API keys are read on the server from environment variables or macOS Keychain.
 - Client code does not import server-only modules.
+- Share links are explicit user actions and do not add cloud sync, hosted
+  storage, analytics, or background uploads.
 - Production responses include baseline security headers from `next.config.mjs`. The CSP allows Next.js inline bootstrapping scripts while restricting external scripts to the app origin.
 
 ## Non-goals

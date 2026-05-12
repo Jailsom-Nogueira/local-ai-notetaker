@@ -386,6 +386,85 @@ a:hover { color: var(--color-purple-hover); }
   font-variant-numeric: tabular-nums; min-width: 18px;
 }
 
+/* ============================================================ Share */
+.share-card { margin-bottom: 20px; }
+.share-card-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+.share-card h2 { margin-bottom: 6px; }
+.share-card-copy { max-width: 460px; }
+.share-card-copy p {
+  color: var(--color-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.share-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.share-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.share-label {
+  color: var(--color-body);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.share-options,
+.share-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.share-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-label);
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+.share-option:hover:not(:disabled) {
+  border-color: var(--color-purple-light);
+  background: var(--color-purple-soft);
+}
+.share-option[aria-pressed="true"] {
+  border-color: var(--color-purple);
+  background: var(--color-purple-soft);
+  color: var(--color-purple);
+  font-weight: 500;
+  box-shadow: inset 0 0 0 1px var(--color-purple-light);
+}
+.share-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+.share-note {
+  color: var(--color-body);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.share-note-success { color: var(--color-success-text); }
+
 /* ============================================================ Badges */
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -501,6 +580,24 @@ code {
     gap: 12px;
   }
 
+  .share-card-main {
+    flex-direction: column;
+  }
+
+  .share-controls {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .share-group {
+    align-items: flex-start;
+  }
+
+  .share-options,
+  .share-actions {
+    justify-content: flex-start;
+  }
+
   .stats-grid {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
@@ -545,7 +642,14 @@ code {
     width: 100%;
   }
 
+  .share-options,
+  .share-actions {
+    width: 100%;
+  }
+
   .source-toggle,
+  .share-option,
+  .share-actions .btn,
   .btn-large {
     justify-content: center;
     width: 100%;

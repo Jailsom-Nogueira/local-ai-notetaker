@@ -1,6 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  buildSharePayload,
+  buildShareUrl,
+  formatShareMessage,
+  isLongSharePayload,
+  type ShareChannel,
+  type ShareSection,
+} from '@/lib/share';
 
 type WhisperSegment = { start: number; end: number; text: string };
 type AiReview = {
@@ -95,6 +103,9 @@ export default function HomePage() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = recordings.find(r => r.id === selectedId) || null;
+  const selectedHasReview = Boolean(selected?.review);
+  const [shareSections, setShareSections] = useState<ShareSection[]>(['transcript', 'review']);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   // refs for recorder pipeline
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -117,6 +128,10 @@ export default function HomePage() {
 
   useEffect(() => { loadRecordings(); }, [loadRecordings]);
   useEffect(() => { setHostLabel(window.location.host); }, []);
+  useEffect(() => {
+    setShareNotice(null);
+    setShareSections(selectedHasReview ? ['transcript', 'review'] : ['transcript']);
+  }, [selectedId, selectedHasReview]);
 
   /** Build a combined audio stream from chosen sources, with software gain for ambient pickup. */
   async function buildStream(): Promise<{ stream: MediaStream; usedSources: string[] }> {
@@ -353,9 +368,42 @@ export default function HomePage() {
     await loadRecordings();
   }
 
+  function toggleShareSection(section: ShareSection) {
+    if (!selected) return;
+    if (section === 'review' && !selected.review) return;
+
+    setShareNotice(null);
+    setShareSections(current => {
+      const available = current.filter(value => value === 'transcript' || Boolean(selected.review));
+      if (current.includes(section)) {
+        if (available.length <= 1) return current;
+        return current.filter(value => value !== section);
+      }
+      return [...current, section];
+    });
+  }
+
+  function announceShare(channel: ShareChannel) {
+    setShareNotice(channel === 'email'
+      ? 'Opening your email composer…'
+      : 'Opening WhatsApp…');
+  }
+
+  async function copyShareText() {
+    if (!sharePayload) return;
+    try {
+      await navigator.clipboard.writeText(formatShareMessage(sharePayload));
+      setShareNotice('Share text copied. Paste it into email or WhatsApp.');
+    } catch {
+      setShareNotice('Copy failed. Use Email or WhatsApp to open a composer instead.');
+    }
+  }
+
   const totalNotes = recordings.length;
   const totalSeconds = recordings.reduce((a, r) => a + (r.durationSec || 0), 0);
   const totalActions = recordings.reduce((a, r) => a + (r.review?.actionItems?.length || 0), 0);
+  const sharePayload = selected ? buildSharePayload(selected, shareSections) : null;
+  const shareIsLong = sharePayload ? isLongSharePayload(sharePayload) : false;
 
   return (
     <div className="app-shell">
@@ -553,6 +601,83 @@ export default function HomePage() {
               </div>
             </div>
           </>
+        )}
+
+        {selected && sharePayload && (
+          <section className="card share-card" aria-labelledby="share-title">
+            <div className="share-card-main">
+              <div className="share-card-copy">
+                <h2 id="share-title">Share</h2>
+                <p>
+                  Checked sections are included in every Email, WhatsApp, or Copy action.
+                  Composer links open on this device; Notetaker does not upload anything automatically.
+                </p>
+              </div>
+
+              <div className="share-controls">
+                <div className="share-group">
+                  <span className="share-label">Include</span>
+                  <div className="share-options" role="group" aria-label="Content to share">
+                    <button
+                      type="button"
+                      className="share-option"
+                      aria-pressed={sharePayload.sections.includes('transcript')}
+                      onClick={() => toggleShareSection('transcript')}
+                    >
+                      {sharePayload.sections.includes('transcript') ? '✓ Transcript' : 'Transcript'}
+                    </button>
+                    <button
+                      type="button"
+                      className="share-option"
+                      aria-pressed={sharePayload.sections.includes('review')}
+                      onClick={() => toggleShareSection('review')}
+                      disabled={!selected.review}
+                      title={selected.review ? 'Include AI Review' : 'Generate an AI Review before sharing it'}
+                    >
+                      {sharePayload.sections.includes('review') ? '✓ AI Review' : 'AI Review'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="share-group">
+                  <span className="share-label">Send with</span>
+                  <div className="share-actions" aria-label="Share destinations">
+                    <a
+                      className="btn btn-ghost"
+                      href={buildShareUrl('email', sharePayload)}
+                      onClick={() => announceShare('email')}
+                    >
+                      ✉ Email
+                    </a>
+                    <a
+                      className="btn btn-ghost"
+                      href={buildShareUrl('whatsapp', sharePayload)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => announceShare('whatsapp')}
+                    >
+                      💬 WhatsApp
+                    </a>
+                    <button type="button" className="btn btn-ghost" onClick={copyShareText}>
+                      Copy text
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="share-hints" aria-live="polite">
+              {!selected.review && (
+                <p className="share-note">Generate an AI Review to make that section shareable.</p>
+              )}
+              {shareIsLong && (
+                <p className="share-note">
+                  This note is long. If a composer trims it, use Copy text and paste it manually.
+                </p>
+              )}
+              {shareNotice && <p className="share-note share-note-success">{shareNotice}</p>}
+            </div>
+          </section>
         )}
 
         {selected && (

@@ -15,6 +15,7 @@ Audio stays on your machine. The optional AI review sends transcript text only.
 - Ambient room-recording mode with browser-side gain and server-side loudness normalization.
 - Language auto-detection, plus English, Portuguese, and Spanish force modes.
 - Structured AI review: summary, key points, action items, decisions, open questions, topics, and sentiment.
+- Share a transcript, an AI review, or both through local email and WhatsApp composer links.
 - Local recording history stored as JSON plus the original audio file.
 
 ## Quick start
@@ -86,6 +87,7 @@ security add-generic-password -a "$USER" -s OPENAI_API_KEY -w "sk-your-key"
 4. Click Start recording.
 5. Click Stop when done.
 6. Review the local transcript and optional AI analysis.
+7. Share the transcript, AI review, or both via email or WhatsApp when needed.
 
 For system audio, the browser opens a screen-share picker. Choose a tab or window
 and enable audio sharing in that browser dialog.

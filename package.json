@@ -10,8 +10,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test src/lib/*.test.ts",
     "check:publication": "node scripts/check-publication.mjs",
-    "check": "npm run check:publication && npm run typecheck && npm run lint && npm run build",
+    "check": "npm run check:publication && npm run test && npm run typecheck && npm run lint && npm run build",
     "setup:model": "node scripts/download-whisper-model.mjs"
   },
   "keywords": [
