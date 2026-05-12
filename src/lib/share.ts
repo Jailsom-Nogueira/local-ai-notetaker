@@ -158,7 +158,7 @@ export function buildShareUrl(channel: ShareChannel, payload: SharePayload): str
     return `mailto:?subject=${encodeURIComponent(payload.subject)}&body=${encodeURIComponent(payload.body)}`;
   }
 
-  return `https://wa.me/?text=${encodeURIComponent(formatShareMessage(payload))}`;
+  return `https://api.whatsapp.com/send?text=${encodeURIComponent(formatShareMessage(payload))}`;
 }
 
 export function isLongSharePayload(payload: SharePayload): boolean {

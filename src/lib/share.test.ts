@@ -80,6 +80,6 @@ test('buildShareUrl encodes email and WhatsApp composer URLs', () => {
   );
   assert.equal(
     buildShareUrl('whatsapp', payload),
-    `https://wa.me/?text=${encodeURIComponent(message)}`
+    `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`
   );
 });
