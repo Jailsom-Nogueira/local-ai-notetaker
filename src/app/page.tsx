@@ -404,6 +404,9 @@ export default function HomePage() {
   const totalActions = recordings.reduce((a, r) => a + (r.review?.actionItems?.length || 0), 0);
   const sharePayload = selected ? buildSharePayload(selected, shareSections) : null;
   const shareIsLong = sharePayload ? isLongSharePayload(sharePayload) : false;
+  const shareSelectionLabel = sharePayload
+    ? sharePayload.sections.map(section => section === 'review' ? 'AI Review' : 'Transcript').join(' + ')
+    : '';
 
   return (
     <div className="app-shell">
@@ -604,64 +607,115 @@ export default function HomePage() {
         )}
 
         {selected && sharePayload && (
-          <section className="card share-card" aria-labelledby="share-title">
-            <div className="share-card-main">
+          <section className="share-card" aria-labelledby="share-title">
+            <div className="share-card-header">
               <div className="share-card-copy">
-                <h2 id="share-title">Share</h2>
+                <div className="share-eyebrow">
+                  <span className="share-mark" aria-hidden="true">↗</span>
+                  <span>Share securely</span>
+                  <span className="share-pill">Local handoff</span>
+                </div>
+                <h2 id="share-title">Share this note</h2>
                 <p>
-                  Checked sections are included in every Email, WhatsApp, or Copy action.
-                  Composer links open on this device; Notetaker does not upload anything automatically.
+                  Choose the payload, then hand it to your own email or WhatsApp composer.
+                  Notetaker never sends it in the background.
                 </p>
               </div>
 
-              <div className="share-controls">
-                <div className="share-group">
-                  <span className="share-label">Include</span>
-                  <div className="share-options" role="group" aria-label="Content to share">
-                    <button
-                      type="button"
-                      className="share-option"
-                      aria-pressed={sharePayload.sections.includes('transcript')}
-                      onClick={() => toggleShareSection('transcript')}
-                    >
-                      {sharePayload.sections.includes('transcript') ? '✓ Transcript' : 'Transcript'}
-                    </button>
-                    <button
-                      type="button"
-                      className="share-option"
-                      aria-pressed={sharePayload.sections.includes('review')}
-                      onClick={() => toggleShareSection('review')}
-                      disabled={!selected.review}
-                      title={selected.review ? 'Include AI Review' : 'Generate an AI Review before sharing it'}
-                    >
-                      {sharePayload.sections.includes('review') ? '✓ AI Review' : 'AI Review'}
-                    </button>
+              <div className="share-summary" aria-label="Selected share content">
+                <span className="share-label">Selected</span>
+                <strong>{shareSelectionLabel}</strong>
+              </div>
+            </div>
+
+            <div className="share-workflow" aria-label="Share workflow">
+              <div className="share-step">
+                <div className="share-step-header">
+                  <span className="share-step-number">01</span>
+                  <div>
+                    <h3>Include</h3>
+                    <p>Pick the sections that go into the shared text.</p>
                   </div>
                 </div>
 
-                <div className="share-group">
-                  <span className="share-label">Send with</span>
-                  <div className="share-actions" aria-label="Share destinations">
-                    <a
-                      className="btn btn-ghost"
-                      href={buildShareUrl('email', sharePayload)}
-                      onClick={() => announceShare('email')}
-                    >
-                      ✉ Email
-                    </a>
-                    <a
-                      className="btn btn-ghost"
-                      href={buildShareUrl('whatsapp', sharePayload)}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => announceShare('whatsapp')}
-                    >
-                      💬 WhatsApp
-                    </a>
-                    <button type="button" className="btn btn-ghost" onClick={copyShareText}>
-                      Copy text
-                    </button>
+                <div className="share-options" role="group" aria-label="Content to share">
+                  <button
+                    type="button"
+                    className="share-option"
+                    aria-pressed={sharePayload.sections.includes('transcript')}
+                    onClick={() => toggleShareSection('transcript')}
+                  >
+                    <span className="share-option-check" aria-hidden="true">
+                      {sharePayload.sections.includes('transcript') ? '✓' : '○'}
+                    </span>
+                    <span>
+                      <span className="share-option-title">Transcript</span>
+                      <span className="share-option-meta">Timestamped local text</span>
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="share-option"
+                    aria-pressed={sharePayload.sections.includes('review')}
+                    onClick={() => toggleShareSection('review')}
+                    disabled={!selected.review}
+                    title={selected.review ? 'Include AI Review' : 'Generate an AI Review before sharing it'}
+                  >
+                    <span className="share-option-check" aria-hidden="true">
+                      {sharePayload.sections.includes('review') ? '✓' : '○'}
+                    </span>
+                    <span>
+                      <span className="share-option-title">AI Review</span>
+                      <span className="share-option-meta">Summary, actions, decisions</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="share-step">
+                <div className="share-step-header">
+                  <span className="share-step-number">02</span>
+                  <div>
+                    <h3>Send with</h3>
+                    <p>Open composer, or copy the same payload manually.</p>
                   </div>
+                </div>
+
+                <div className="share-actions" aria-label="Share destinations">
+                  <a
+                    className="share-destination share-destination-primary"
+                    href={buildShareUrl('whatsapp', sharePayload)}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => announceShare('whatsapp')}
+                  >
+                    <span className="share-destination-icon" aria-hidden="true">💬</span>
+                    <span>
+                      <span className="share-option-title">WhatsApp</span>
+                      <span className="share-option-meta">Open composer</span>
+                    </span>
+                  </a>
+
+                  <a
+                    className="share-destination"
+                    href={buildShareUrl('email', sharePayload)}
+                    onClick={() => announceShare('email')}
+                  >
+                    <span className="share-destination-icon" aria-hidden="true">✉</span>
+                    <span>
+                      <span className="share-option-title">Email</span>
+                      <span className="share-option-meta">Draft message</span>
+                    </span>
+                  </a>
+
+                  <button type="button" className="share-destination" onClick={copyShareText}>
+                    <span className="share-destination-icon" aria-hidden="true">⧉</span>
+                    <span>
+                      <span className="share-option-title">Copy text</span>
+                      <span className="share-option-meta">Fallback for long notes</span>
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
