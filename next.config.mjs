@@ -18,7 +18,7 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-  { key: 'Permissions-Policy', value: 'microphone=(self), display-capture=(self)' },
+  { key: 'Permissions-Policy', value: 'microphone=(self), display-capture=(self), screen-wake-lock=(self)' },
 ];
 
 /** @type {import('next').NextConfig} */

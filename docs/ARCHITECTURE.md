@@ -26,11 +26,33 @@ Route handlers run in the Node.js runtime.
 
 | Route | Responsibility |
 | --- | --- |
-| `POST /api/transcribe` | Accept one audio file, save it locally, normalize it with `ffmpeg`, transcribe it with `whisper-cli`, and save metadata. |
-| `POST /api/review` | Load a local transcript and ask OpenAI for a structured JSON review. |
-| `GET /api/recordings` | List locally saved recording metadata. |
-| `DELETE /api/recordings/[id]` | Delete local metadata and audio files for one recording id. |
+| `POST /api/recordings/start` | Begin a streamed session: create an empty local audio file and a `recording` status. |
+| `PUT /api/recordings/[id]/chunk` | Append one ordered audio chunk to the session file, enforcing the cumulative size cap. |
+| `POST /api/recordings/[id]/finalize` | Normalize, transcribe (chunked), and persist the captured session; returns immediately while processing continues, updating status. |
+| `POST /api/transcribe` | Single-shot path: accept one audio file, save it locally, then run the same `processRecording` pipeline. |
+| `POST /api/review` | Load a local transcript and ask OpenAI for a structured JSON review. Long transcripts use map-reduce summarization. |
+| `GET /api/recordings` | List locally saved recording metadata plus pending (unfinished) sessions. |
+| `GET /api/recordings/[id]` | Return a finalized recording, or processing status for client polling. |
+| `DELETE /api/recordings/[id]` | Delete local metadata, audio, and sidecar files for one recording id. |
 | `GET /api/health` | Check local dependencies without exposing secrets. |
+
+### Long-recording lifecycle
+
+For multi-hour recordings the browser streams audio to disk as it records, so a
+tab crash, sleep, or accidental close does not lose the session:
+
+1. `POST /api/recordings/start` creates `<id>.webm` and `<id>.status.json`.
+2. `MediaRecorder` emits ordered chunks; each is appended via `PUT .../chunk`.
+3. `POST .../finalize` runs `ffmpeg` normalization, splits the WAV into
+   fixed-length segments (`NOTETAKER_SEGMENT_SECONDS`), transcribes each with
+   `whisper-cli`, stitches the segments with offset timestamps, and saves
+   `<id>.json`. Progress is written to `<id>.status.json` and polled by the
+   client via `GET /api/recordings/[id]`.
+4. Sessions captured but never finalized appear as pending and can be finished
+   or discarded from the UI.
+
+Status and segment sidecar files are excluded from the recordings list and are
+removed with the recording on delete.
 
 ### Local filesystem
 
@@ -44,15 +66,17 @@ Git because they are large generated artifacts.
 ## Data flow
 
 ```text
-Browser audio Blob
-  -> POST /api/transcribe
-  -> data/recordings/<id>.webm
-  -> ffmpeg normalized WAV
-  -> whisper-cli JSON output
-  -> data/recordings/<id>.json
+Browser audio chunks (streamed)
+  -> POST /api/recordings/start            (create <id>.webm + <id>.status.json)
+  -> PUT  /api/recordings/<id>/chunk ...   (append ordered chunks)
+  -> POST /api/recordings/<id>/finalize
+       -> ffmpeg normalized WAV
+       -> split into NOTETAKER_SEGMENT_SECONDS pieces
+       -> whisper-cli per segment, merged with offset timestamps
+       -> data/recordings/<id>.json
   -> POST /api/review
-  -> OpenAI text-only request
-  -> data/recordings/<id>.json with review
+       -> OpenAI text-only request (map-reduce for long transcripts)
+       -> data/recordings/<id>.json with review
 ```
 
 ## Security boundaries

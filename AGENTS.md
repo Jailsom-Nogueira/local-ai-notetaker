@@ -63,13 +63,16 @@ Use `npm ci` for clean installs. Use `npm run setup:model` to download the defau
 
 ## Project map
 
-- `src/app/page.tsx` — browser UI, MediaRecorder/WebAudio flow, recording controls, history, detail view.
-- `src/app/api/transcribe/route.ts` — upload validation, local audio persistence, ffmpeg conversion, whisper.cpp transcription.
-- `src/app/api/review/route.ts` — optional OpenAI review from stored transcript text.
-- `src/app/api/recordings/route.ts` — local recording list.
-- `src/app/api/recordings/[id]/route.ts` — local recording deletion with id validation.
+- `src/app/page.tsx` — browser UI, MediaRecorder/WebAudio flow, streamed-chunk capture, pause/resume, wake lock, progress polling, crash recovery, history, detail view.
+- `src/app/api/recordings/start/route.ts` — begin a streamed recording session (empty local file + status).
+- `src/app/api/recordings/[id]/chunk/route.ts` — append ordered audio chunks with cumulative size cap.
+- `src/app/api/recordings/[id]/finalize/route.ts` — kick off chunked transcription of a captured session.
+- `src/app/api/transcribe/route.ts` — single-shot upload path; shares the `processRecording` pipeline.
+- `src/app/api/review/route.ts` — optional OpenAI review from stored transcript text, map-reduce for long transcripts.
+- `src/app/api/recordings/route.ts` — local recording list plus pending sessions.
+- `src/app/api/recordings/[id]/route.ts` — single recording fetch/status (GET) and deletion (DELETE) with id validation.
 - `src/app/api/health/route.ts` — dependency checks without exposing secrets or private paths.
-- `src/lib/server.ts` — server-only filesystem, transcription, review, and configuration helpers.
+- `src/lib/server.ts` — server-only filesystem, streamed-session, chunked transcription, review, and configuration helpers.
 - `docs/ARCHITECTURE.md` — local-first architecture and security boundaries.
 - `docs/SELF-HOSTING.md` — clone-from-zero setup and operations.
 - `scripts/check-publication.mjs` — public-release scanner.

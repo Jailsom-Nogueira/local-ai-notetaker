@@ -120,16 +120,24 @@ Browser recorder
         │
         ▼
 Next.js route handlers
-  ├─ /api/transcribe: saves audio, converts with ffmpeg, transcribes with whisper-cli
+  ├─ /api/recordings/start: opens a streamed recording session
+  ├─ /api/recordings/[id]/chunk: appends ordered audio chunks to disk
+  ├─ /api/recordings/[id]/finalize: ffmpeg + chunked whisper-cli transcription
+  ├─ /api/transcribe: single-shot upload path (same pipeline)
   ├─ /api/review: sends transcript text to OpenAI and stores structured JSON
-  ├─ /api/recordings: lists local recordings
-  └─ /api/recordings/[id]: deletes one local recording
+  ├─ /api/recordings: lists local recordings and pending sessions
+  └─ /api/recordings/[id]: fetch/status (GET) and delete (DELETE)
         │
         ▼
 Local filesystem
   ├─ data/recordings/*.webm
+  ├─ data/recordings/*.status.json
   └─ data/recordings/*.json
 ```
+
+Long recordings stream audio to disk as they record, so a closed tab or sleep
+does not lose the session, and very long audio is transcribed in segments with
+progress. See `docs/ARCHITECTURE.md` for the full lifecycle.
 
 See `docs/ARCHITECTURE.md` for more detail.
 

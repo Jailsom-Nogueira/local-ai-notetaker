@@ -34,6 +34,31 @@ type Recording = {
   review?: AiReview | null;
 };
 
+type RecordingStatus = {
+  state: 'recording' | 'processing' | 'done' | 'error';
+  processed: number;
+  total: number;
+  title?: string;
+  durationSec?: number;
+  error?: string;
+  updatedAt: string;
+};
+
+type PendingSession = {
+  id: string;
+  state: RecordingStatus['state'];
+  processed: number;
+  total: number;
+  title?: string;
+  durationSec?: number;
+  updatedAt: string;
+};
+
+type WakeLockLike = { release: () => Promise<void> };
+type WakeLockNavigator = Navigator & {
+  wakeLock?: { request: (type: 'screen') => Promise<WakeLockLike> };
+};
+
 type LanguageCode = 'auto' | 'en' | 'pt' | 'es';
 
 const LANGUAGE_OPTIONS: ReadonlyArray<{ code: LanguageCode; label: string; flag: string }> = [
@@ -86,6 +111,7 @@ function languageFlag(code: string): string {
 export default function HomePage() {
   // recorder state
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [meterLevel, setMeterLevel] = useState(0);
   const [useMic, setUseMic] = useState(true);
@@ -96,11 +122,13 @@ export default function HomePage() {
   // Language: 'auto' (Whisper detects) | 'en' | 'pt' | 'es' | ...
   const [language, setLanguage] = useState<LanguageCode>('auto');
   const [processing, setProcessing] = useState<'idle' | 'transcribing' | 'reviewing'>('idle');
+  const [processProgress, setProcessProgress] = useState<{ processed: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hostLabel, setHostLabel] = useState('local app');
 
   // history
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = recordings.find(r => r.id === selectedId) || null;
   const selectedHasReview = Boolean(selected?.review);
@@ -109,20 +137,31 @@ export default function HomePage() {
 
   // refs for recorder pipeline
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const streamsRef = useRef<MediaStream[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number>(0);
+  const segStartRef = useRef<number>(0);
+  const baseElapsedMsRef = useRef<number>(0);
+  const finalDurationRef = useRef<number>(0);
   const elapsedTimerRef = useRef<number | null>(null);
+  // Streamed-session refs.
+  const currentIdRef = useRef<string | null>(null);
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const uploadFailedRef = useRef<boolean>(false);
+  const wakeLockRef = useRef<WakeLockLike | null>(null);
+  const isRecordingRef = useRef<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
 
   const loadRecordings = useCallback(async () => {
     try {
       const r = await fetch('/api/recordings');
       const j = await r.json();
-      if (j.ok) setRecordings(j.recordings);
+      if (j.ok) {
+        setRecordings(j.recordings);
+        setPendingSessions(Array.isArray(j.pending) ? j.pending : []);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -246,10 +285,73 @@ export default function HomePage() {
     tick();
   }
 
+  async function acquireWakeLock() {
+    try {
+      const wl = (navigator as WakeLockNavigator).wakeLock;
+      if (!wl) return;
+      wakeLockRef.current = await wl.request('screen');
+    } catch { /* wake lock is best-effort */ }
+  }
+
+  function releaseWakeLock() {
+    try { void wakeLockRef.current?.release(); } catch {}
+    wakeLockRef.current = null;
+  }
+
+  // Re-acquire the wake lock when the tab becomes visible again while recording.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && isRecordingRef.current && !wakeLockRef.current) {
+        void acquireWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
+  /** Append one ordered audio chunk to the server session. Failures (e.g. the
+   * size cap) stop the recording so the captured audio so far is still usable. */
+  function enqueueChunk(id: string, blob: Blob) {
+    uploadQueueRef.current = uploadQueueRef.current
+      .then(async () => {
+        if (uploadFailedRef.current) return;
+        const buf = await blob.arrayBuffer();
+        const r = await fetch(`/api/recordings/${id}/chunk`, { method: 'PUT', body: buf });
+        if (!r.ok) {
+          const j = await r.json().catch(() => null);
+          throw new Error(j?.error || 'Chunk upload failed.');
+        }
+      })
+      .catch((err) => {
+        if (uploadFailedRef.current) return;
+        uploadFailedRef.current = true;
+        setError(errorMessage(err));
+        if (isRecordingRef.current) stopRecording();
+      });
+  }
+
+  function currentElapsedMs(): number {
+    const segment = isPausedRef.current ? 0 : Date.now() - segStartRef.current;
+    return baseElapsedMsRef.current + segment;
+  }
+
   async function startRecording() {
     setError(null);
     try {
       const { stream, usedSources } = await buildStream();
+
+      const startRes = await fetch('/api/recordings/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sources: usedSources, language, title: '' }),
+      });
+      const startJson = await startRes.json();
+      if (!startJson.ok) throw new Error(startJson.error || 'Could not start recording.');
+      const id: string = startJson.id;
+      currentIdRef.current = id;
+      uploadQueueRef.current = Promise.resolve();
+      uploadFailedRef.current = false;
+
       setupMeter(stream);
 
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -260,35 +362,68 @@ export default function HomePage() {
 
       const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 192000 } : undefined);
       mediaRecorderRef.current = mr;
-      chunksRef.current = [];
-      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
-
-      mr.onstop = async () => {
-        cleanupStreams();
-        const blob = new Blob(chunksRef.current, { type: mime || 'audio/webm' });
-        const durationSec = (Date.now() - startTimeRef.current) / 1000;
-        await uploadAndProcess(blob, usedSources, durationSec);
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0 && currentIdRef.current) enqueueChunk(currentIdRef.current, e.data);
       };
 
-      startTimeRef.current = Date.now();
+      mr.onstop = async () => {
+        const recId = currentIdRef.current;
+        const durationSec = finalDurationRef.current;
+        cleanupStreams();
+        if (!recId) return;
+        // Drain queued chunk uploads before finalizing.
+        await uploadQueueRef.current.catch(() => {});
+        await finalizeAndPoll(recId, durationSec);
+      };
+
+      baseElapsedMsRef.current = 0;
+      segStartRef.current = Date.now();
+      isPausedRef.current = false;
+      setIsPaused(false);
       setElapsed(0);
       elapsedTimerRef.current = window.setInterval(() => {
-        setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        setElapsed(Math.floor(currentElapsedMs() / 1000));
       }, 250);
 
-      mr.start(1000); // 1s chunks
+      mr.start(5000); // 5s chunks streamed to disk
+      isRecordingRef.current = true;
       setIsRecording(true);
+      void acquireWakeLock();
     } catch (error) {
       setError(errorMessage(error));
       cleanupStreams();
     }
   }
 
+  function pauseRecording() {
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state !== 'recording') return;
+    mr.pause();
+    baseElapsedMsRef.current += Date.now() - segStartRef.current;
+    isPausedRef.current = true;
+    setIsPaused(true);
+    releaseWakeLock();
+  }
+
+  function resumeRecording() {
+    const mr = mediaRecorderRef.current;
+    if (!mr || mr.state !== 'paused') return;
+    segStartRef.current = Date.now();
+    isPausedRef.current = false;
+    setIsPaused(false);
+    mr.resume();
+    void acquireWakeLock();
+  }
+
   function stopRecording() {
+    finalDurationRef.current = Math.round(currentElapsedMs() / 1000);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
+    isRecordingRef.current = false;
+    isPausedRef.current = false;
     setIsRecording(false);
+    setIsPaused(false);
     if (elapsedTimerRef.current) {
       clearInterval(elapsedTimerRef.current);
       elapsedTimerRef.current = null;
@@ -304,42 +439,95 @@ export default function HomePage() {
       try { audioCtxRef.current.close(); } catch {}
       audioCtxRef.current = null;
     }
+    releaseWakeLock();
     setMeterLevel(0);
   }
 
-  async function uploadAndProcess(blob: Blob, usedSources: string[], durationSec: number) {
+  /** Trigger server-side processing for a session and poll until it finishes,
+   * then auto-run the AI review. Shared by stop and crash-recovery resume. */
+  async function finalizeAndPoll(id: string, durationSec: number) {
     setProcessing('transcribing');
+    setProcessProgress(null);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append('audio', blob, `recording.webm`);
-      fd.append('sources', usedSources.join(','));
-      fd.append('durationSec', String(Math.round(durationSec)));
-      fd.append('language', language);
-      const r = await fetch('/api/transcribe', { method: 'POST', body: fd });
+      const r = await fetch(`/api/recordings/${id}/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationSec: Math.round(durationSec) }),
+      });
       const j = await r.json();
-      if (!j.ok) throw new Error(j.error || 'Transcription failed');
+      if (!j.ok) throw new Error(j.error || 'Could not finalize recording.');
 
-      const rec: Recording = j.recording;
+      const rec = await pollUntilDone(id);
+      currentIdRef.current = null;
+      setProcessProgress(null);
       setSelectedId(rec.id);
       await loadRecordings();
+      await runReviewFor(rec.id);
+    } catch (error) {
+      setError(errorMessage(error));
+      setProcessing('idle');
+      setProcessProgress(null);
+      await loadRecordings();
+    }
+  }
 
-      // Auto-trigger AI review
-      setProcessing('reviewing');
+  async function pollUntilDone(id: string): Promise<Recording> {
+    // The server heartbeats `updatedAt` every ~20s while working. If it stops
+    // advancing for this long, the job was lost or hung (e.g. a server restart),
+    // so stop polling and let the user finish it from the recovery panel.
+    const STALL_MS = 120000;
+    let lastUpdatedAt = '';
+    let lastChangeAt = Date.now();
+
+    for (;;) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const r = await fetch(`/api/recordings/${id}`);
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'Processing failed.');
+      if (j.state === 'done' && j.recording) return j.recording as Recording;
+      if (j.state === 'error') throw new Error(j.status?.error || 'Transcription failed.');
+      if (j.status) {
+        setProcessProgress({ processed: j.status.processed || 0, total: j.status.total || 0 });
+        const updatedAt: string = j.status.updatedAt || '';
+        if (updatedAt !== lastUpdatedAt) {
+          lastUpdatedAt = updatedAt;
+          lastChangeAt = Date.now();
+        } else if (Date.now() - lastChangeAt > STALL_MS) {
+          throw new Error('Transcription stalled. Reopen the app and finish it from "Unfinished recordings".');
+        }
+      }
+    }
+  }
+
+  async function runReviewFor(id: string) {
+    setProcessing('reviewing');
+    try {
       const r2 = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: rec.id }),
+        body: JSON.stringify({ id }),
       });
       const j2 = await r2.json();
       if (!j2.ok) throw new Error(j2.error || 'AI review failed');
       await loadRecordings();
-      setProcessing('idle');
     } catch (error) {
       setError(errorMessage(error));
-      setProcessing('idle');
       await loadRecordings();
+    } finally {
+      setProcessing('idle');
     }
+  }
+
+  async function resumeSession(session: PendingSession) {
+    if (processing !== 'idle' || isRecording) return;
+    await finalizeAndPoll(session.id, session.durationSec || 0);
+  }
+
+  async function discardSession(id: string) {
+    if (!confirm('Discard this unfinished recording and its audio?')) return;
+    await fetch(`/api/recordings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadRecordings();
   }
 
   async function rerunReview(id: string) {
@@ -446,10 +634,66 @@ export default function HomePage() {
 
         {error && <div className="error-banner">⚠ {error}</div>}
         {processing !== 'idle' && (
-          <div className="processing-banner">
-            <span className="spinner" />
-            {processing === 'transcribing' && 'Transcribing audio with Whisper on your machine…'}
-            {processing === 'reviewing' && 'Sending transcript text to OpenAI for review…'}
+          <div className="processing-banner" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="spinner" />
+              {processing === 'transcribing' && (
+                processProgress && processProgress.total > 0
+                  ? `Transcribing locally with Whisper… part ${processProgress.processed} of ${processProgress.total}`
+                  : 'Transcribing audio with Whisper on your machine…'
+              )}
+              {processing === 'reviewing' && 'Sending transcript text to OpenAI for review…'}
+            </div>
+            {processing === 'transcribing' && processProgress && processProgress.total > 0 && (
+              <div
+                className="recorder-meter"
+                style={{ maxWidth: 'none' }}
+                role="progressbar"
+                aria-label="Transcription progress"
+                aria-valuemin={0}
+                aria-valuemax={processProgress.total}
+                aria-valuenow={processProgress.processed}
+                aria-valuetext={`Part ${processProgress.processed} of ${processProgress.total}`}
+              >
+                <div
+                  className="recorder-meter-fill"
+                  style={{ width: `${Math.round((processProgress.processed / processProgress.total) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {!selected && pendingSessions.length > 0 && (
+          <div className="processing-banner" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+            <strong>Unfinished recordings</strong>
+            <span style={{ fontWeight: 400 }}>
+              These sessions were captured but not fully processed (for example after a closed tab or restart).
+              Their audio is saved locally. You can finish processing or discard them.
+            </span>
+            {pendingSessions.map(session => (
+              <div
+                key={session.id}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}
+              >
+                <span style={{ fontWeight: 400 }}>
+                  {(session.title && session.title.trim()) || 'Untitled session'} · {formatHMS(session.durationSec || 0)}
+                  {session.state === 'processing' ? ' · was processing' : session.state === 'error' ? ' · failed' : ' · captured'}
+                </span>
+                <span style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => resumeSession(session)}
+                    disabled={processing !== 'idle' || isRecording}
+                  >
+                    Finish processing
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => discardSession(session.id)} disabled={processing !== 'idle'}>
+                    Discard
+                  </button>
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -476,7 +720,9 @@ export default function HomePage() {
 
             <div className="recorder-card">
               <div className="recorder-status">
-                {isRecording ? <><span className="record-pulse"/> Recording</> : 'Ready'}
+                {isRecording
+                  ? (isPaused ? 'Paused' : <><span className="record-pulse"/> Recording</>)
+                  : 'Ready'}
               </div>
               <div className="recorder-time">{formatHMS(elapsed)}</div>
               <div className="recorder-meter">
@@ -556,15 +802,26 @@ export default function HomePage() {
                     ⏺ Start recording
                   </button>
                 ) : (
-                  <button className="btn btn-danger btn-large" onClick={stopRecording}>
-                    ⏹ Stop
-                  </button>
+                  <>
+                    {isPaused ? (
+                      <button className="btn btn-ghost btn-large" onClick={resumeRecording}>
+                        ▶ Resume
+                      </button>
+                    ) : (
+                      <button className="btn btn-ghost btn-large" onClick={pauseRecording}>
+                        ⏸ Pause
+                      </button>
+                    )}
+                    <button className="btn btn-danger btn-large" onClick={stopRecording}>
+                      ⏹ Stop
+                    </button>
+                  </>
                 )}
               </div>
               <div style={{ fontSize: 12, color: 'var(--color-body)', textAlign: 'center', maxWidth: 480 }}>
                 <strong>Ambient mode</strong> turns off echo cancellation, noise suppression, and auto-gain so the
                 mic picks up distant voices. The sensitivity slider boosts the signal up to 8× with a soft limiter
-                to prevent clipping. Audio stays on your Mac; only the final text is sent to OpenAI.
+                to prevent clipping. Audio stays on your machine; only the final text is sent to OpenAI.
               </div>
             </div>
 

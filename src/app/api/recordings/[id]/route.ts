@@ -1,9 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { RECORDINGS_DIR, isValidRecordingId, loadRecording } from '@/lib/server';
+import { RECORDINGS_DIR, isValidRecordingId, loadRecording, readStatus } from '@/lib/server';
 
 export const runtime = 'nodejs';
+
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  if (!isValidRecordingId(id)) {
+    return NextResponse.json({ error: 'Invalid recording id.' }, { status: 400 });
+  }
+
+  const recording = await loadRecording(id);
+  if (recording) {
+    return NextResponse.json({ ok: true, state: 'done', recording });
+  }
+
+  const status = await readStatus(id);
+  if (status) {
+    return NextResponse.json({ ok: true, state: status.state, status });
+  }
+
+  return NextResponse.json({ error: 'Recording not found.' }, { status: 404 });
+}
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
